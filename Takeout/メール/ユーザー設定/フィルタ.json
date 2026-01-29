@@ -1,0 +1,43 @@
+{
+  "filter": [{
+    "query": "kanri@linica.jp",
+    "labelsToAdd": ["重要マークを付ける", "スター付き", "管理部"]
+  }, {
+    "query": "list:\"nisshin-project.macgraphic.co.jp\"",
+    "labelsToAdd": ["カテゴリ: フォーラム"]
+  }, {
+    "query": "list:\"RE_WEB.ubic-cc.backlog.jp\"",
+    "labelsToAdd": ["カテゴリ: フォーラム"]
+  }, {
+    "query": "{list:MGA_LD.macgraphic.backlog.jp list:PERSOLTECH_CORP.macgraphic.backlog.jp list:MANULIFE.macgraphic.backlog.jp list:BBQGO.macgraphic.backlog.jp list:SOKA_RE.macgraphic.backlog.jp}",
+    "labelsToAdd": ["カテゴリ: フォーラム"]
+  }, {
+    "query": "from:n-yamada@coccoto.jp list:\"mga_soka@macgraphic.co.jp\"",
+    "labelsToAdd": ["重要マークを付ける"]
+  }, {
+    "query": "bizstation",
+    "labelsToAdd": ["重要マークを付ける", "スター付き", "管理部"]
+  }, {
+    "query": "list:retirement.linica.jp",
+    "labelsToAdd": ["スター付き", "重要マークを付ける"]
+  }, {
+    "query": "from:frontier-gr.jp ご相談"
+  }, {
+    "query": "from:ladycrew.com ご相談"
+  }, {
+    "query": "contact.linica.jp"
+  }, {
+    "query": "from:noreply@linica.jp 資料ダウンロード",
+    "labelsToAdd": ["重要マークを付ける", "資料ダウンロード"]
+  }, {
+    "query": "superpower daily",
+    "labelsToAdd": ["SuperpowerDaily"]
+  }, {
+    "query": "from:sagajokouenkai@groupml.jp",
+    "labelsToAdd": ["相模女中高後援会"]
+  }, {
+    "query": "from:iqvia.com",
+    "labelsToAdd": ["IQVIA", "アーカイブ済み"],
+    "labelsToRemove": ["受信トレイ"]
+  }]
+}

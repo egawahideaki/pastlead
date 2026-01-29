@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# Node
+node_modules/
+.next/
+out/
+build/
+.DS_Store
+*.log
+
+# Data & Personal Info
+*.mbox
+*.db
+*.sqlite
+*.sqlite3
+import_progress.json
+backup/
+data/
+backend/*.mbox
