@@ -1,0 +1,15 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+psycopg2-binary
+pgvector
+pydantic
+pydantic-settings
+python-dotenv
+asyncpg
+BeautifulSoup4
+lxml
+sentence-transformers
+torch
+requests
+networkx
