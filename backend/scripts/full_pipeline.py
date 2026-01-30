@@ -52,14 +52,21 @@ def main():
         if not run_step("import_mbox_fast.py", [args.mbox_path]):
             sys.exit(1)
     
-    # 2. Extract Bodies / Decode (Built-in to import? No, usually separate step for older imports, but let's check widely used flow)
-    # Actually import_mbox_fast saves raw body? 
-    # Let's run extract_bodies.py just in case it's needed for cleaning.
-    # run_step("extract_bodies.py") 
-    # (Assuming import_mbox_fast does enough or extract_bodies is part of reconstruction)
+    # 2. Extract Bodies (Decode content) from the imported data
+    # This is CRITICAL because import_mbox_fast only sets "Pending extraction"
+    # We pass the mbox path just in case, but usually it reads from DB or Raw file?
+    # extract_bodies_retry.py usually reads from DB messages where content is pending.
+    # Let's check which script is best. 'extract_bodies.py' seems standard.
+    if not run_step("extract_bodies.py"):
+        sys.exit(1)
 
     # 3. Reconstruct Threads (Strict Version is usually best)
     if not run_step("reconstruct_threads_strict.py"):
+        sys.exit(1)
+
+    # 3.2 Filtering (Remove garbage/machine emails)
+    # Must run BEFORE scoring to avoid processing junk
+    if not run_step("run_filtering.py"):
         sys.exit(1)
 
     # 3.5 Extract Features & Scores
