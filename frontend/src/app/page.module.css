@@ -26,14 +26,12 @@
   gap: 0.8rem;
 }
 
-.brand h1 {
-  font-size: 1.5rem;
-  font-weight: 800;
-  margin: 0;
-  background: linear-gradient(135deg, #60a5fa, #a78bfa);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  letter-spacing: -0.02em;
+.logoImage {
+  height: 28px;
+  width: auto;
+  /* Assuming the uploaded image is black, this makes it white */
+  filter: brightness(0) invert(1);
+  object-fit: contain;
 }
 
 .badge {

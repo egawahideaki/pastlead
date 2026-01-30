@@ -81,9 +81,9 @@ export default function ThreadDetail() {
         <main className={styles.main}>
             <header className={styles.header}>
                 <button onClick={() => router.back()} className={styles.backBtn}>
-                    ← Back
+                    ← 戻る
                 </button>
-                <h1>Thread Detail</h1>
+                <h1>スレッド詳細</h1>
             </header>
 
             <div className={styles.container}>
@@ -92,7 +92,7 @@ export default function ThreadDetail() {
                 <div className={styles.aiSection}>
                     <div className={styles.aiHeader}>
                         <span className={styles.aiIcon}>✨</span>
-                        <span>AI Insight</span>
+                        <span>AIインサイト</span>
                     </div>
 
                     {aiLoading ? (
