@@ -62,6 +62,10 @@ def main():
     if not run_step("reconstruct_threads_strict.py"):
         sys.exit(1)
 
+    # 3.5 Extract Features & Scores
+    if not run_step("extract_features.py"):
+        sys.exit(1)
+
     # 4. Generate Embeddings (Vector search prep)
     if not run_step("generate_embeddings.py"):
         sys.exit(1)

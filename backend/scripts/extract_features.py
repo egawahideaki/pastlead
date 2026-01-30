@@ -140,5 +140,29 @@ def run_feature_extraction():
             
     print(f"\n✅ Feature Extraction Complete. Processed {processed} threads.")
 
+    print("   - Aggregating Contact Scores...")
+    with engine.connect() as conn:
+        # Simple aggregation: Sum of thread scores + Recency bonus?
+        # For now just Sum of Thread Scores
+        # Also update last_contacted_at from max(thread.last_message_at)
+        
+        stmt_agg = text("""
+            UPDATE contacts c
+            SET closeness_score = sub.total_score,
+                last_contacted_at = sub.last_active
+            FROM (
+                SELECT contact_id, 
+                       SUM(score) as total_score,
+                       MAX(last_message_at) as last_active
+                FROM threads
+                WHERE status = 'active'
+                GROUP BY contact_id
+            ) sub
+            WHERE c.id = sub.contact_id
+        """)
+        conn.execute(stmt_agg)
+        conn.commit()
+    print("✅ Contact Scores Updated.")
+
 if __name__ == "__main__":
     run_feature_extraction()
