@@ -58,7 +58,8 @@ if [ -n "$MBOX_FILENAME" ]; then
     # Wait a bit for DB to be potentially ready (though depends_on handles startup, migration might need time)
     sleep 5
     
-    docker-compose exec -T -e MBOX_DIR="$MBOX_DIR" backend python scripts/full_pipeline.py "$CONTAINER_PATH"
+    # Set PYTHONPATH=. to ensure app module is found
+    docker-compose exec -T -e MBOX_DIR="$MBOX_DIR" -e PYTHONPATH=. backend python scripts/full_pipeline.py "$CONTAINER_PATH"
     
     if [ $? -eq 0 ]; then
         echo "✅ Data initialization complete!"
