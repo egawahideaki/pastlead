@@ -3,7 +3,7 @@
 # PastLead All-in-One Setup Script
 # Usage: ./setup.sh /path/to/your/mail.mbox
 
-MBOX_PATH=$1
+INPUT_MBOX_PATH=$1
 
 echo "=========================================="
 echo "   PastLead: Containerized Setup "
@@ -16,9 +16,29 @@ if ! command -v docker &> /dev/null; then
     exit 1
 fi
 
-# 2. Start Services
-echo "🚀 Starting Docker containers (DB, Backend, Frontend)..."
-echo "   This may take a while on first run (building images)..."
+MBOX_DIR="./Takeout"
+MBOX_FILENAME=""
+
+# 2. Configure Mbox Path (Direct Mount)
+if [ -n "$INPUT_MBOX_PATH" ]; then
+    if [ ! -f "$INPUT_MBOX_PATH" ]; then
+        echo "⚠️  Warning: Mbox file not found at $INPUT_MBOX_PATH"
+        echo "   Starting empty."
+    else
+        # Resolve absolute path
+        ABS_MBOX_PATH=$(cd "$(dirname "$INPUT_MBOX_PATH")"; pwd)/$(basename "$INPUT_MBOX_PATH")
+        MBOX_DIR=$(dirname "$ABS_MBOX_PATH")
+        MBOX_FILENAME=$(basename "$ABS_MBOX_PATH")
+        
+        echo "📂 Mounting Mbox directory: $MBOX_DIR"
+    fi
+fi
+
+# 3. Start Services
+echo "🚀 Starting Docker containers..."
+# Pass the directory as environment variable to docker-compose
+export MBOX_DIR="$MBOX_DIR"
+
 docker-compose up -d --build
 
 if [ $? -ne 0 ]; then
@@ -28,50 +48,28 @@ fi
 
 echo "✅ Containers up and running!"
 
-# 3. Data Import Pipeline (if Mbox provided)
-if [ -n "$MBOX_PATH" ]; then
-    if [ ! -f "$MBOX_PATH" ]; then
-        echo "⚠️  Warning: Mbox file not found at $MBOX_PATH"
-        echo "   Skipping import. You can run import later inside the container."
+# 4. Data Import Pipeline
+if [ -n "$MBOX_FILENAME" ]; then
+    echo "🔄 Starting Full Pipeline inside Backend Container..."
+    
+    # We mounted the directory to /app/Takeout, so the file is at /app/Takeout/filename
+    CONTAINER_PATH="/app/Takeout/$MBOX_FILENAME"
+    
+    # Wait a bit for DB to be potentially ready (though depends_on handles startup, migration might need time)
+    sleep 5
+    
+    docker-compose exec -T -e MBOX_DIR="$MBOX_DIR" backend python scripts/full_pipeline.py "$CONTAINER_PATH"
+    
+    if [ $? -eq 0 ]; then
+        echo "✅ Data initialization complete!"
     else
-        echo "📦 detected Mbox file. Copying to container volume..."
-        # We need to copy mbox to project dir or mount it. 
-        # Since we mounted ./Takeout to /app/Takeout in docker-compose, 
-        # let's copy the mbox there if it's not already there.
-        
-        FILENAME=$(basename "$MBOX_PATH")
-        DEST_DIR="./Takeout"
-        mkdir -p "$DEST_DIR"
-        
-        # Check if file is outside project, copy it.
-        # If it's the same path, ignore.
-        ABS_MBOX=$(readlink -f "$MBOX_PATH" 2>/dev/null || echo "$MBOX_PATH")
-        ABS_DEST=$(readlink -f "$DEST_DIR/$FILENAME" 2>/dev/null || echo "$DEST_DIR/$FILENAME")
-        
-        if [ "$ABS_MBOX" != "$ABS_DEST" ]; then
-            cp "$MBOX_PATH" "$DEST_DIR/"
-            echo "   Copied to $DEST_DIR/$FILENAME"
-        fi
-
-        echo "🔄 Starting Full Pipeline inside Backend Container..."
-        # Execute the pipeline inside the container
-        docker-compose exec -T backend python scripts/full_pipeline.py "/app/Takeout/$FILENAME"
-        
-        if [ $? -eq 0 ]; then
-            echo "✅ Data initialization complete!"
-        else
-            echo "❌ Data import failed."
-        fi
+        echo "❌ Data import failed."
     fi
 else
     echo "ℹ️  No Mbox file provided. Skipping import."
-    echo "   To import data later, put mbox in ./Takeout/ and run:"
-    echo "   docker-compose exec backend python scripts/full_pipeline.py /app/Takeout/filename.mbox"
 fi
 
 echo ""
 echo "🎉 Setup Finished!"
 echo "   - Frontend: http://localhost:3000"
 echo "   - Backend:  http://localhost:8000"
-echo "   - API Docs: http://localhost:8000/docs"
-echo ""

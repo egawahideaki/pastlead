@@ -28,7 +28,7 @@ services:
       - DATABASE_URL=postgresql://user:password@db:5432/knowhow_db
     volumes:
       - ./backend:/app
-      - ./Takeout:/app/Takeout # Mount Takeout dir to access mbox
+      - ${MBOX_DIR:-./Takeout}:/app/Takeout # Mount external Mbox dir dynamically
       # Mount model cache to persist downloaded models
       - huggingface_cache:/root/.cache/huggingface
 
