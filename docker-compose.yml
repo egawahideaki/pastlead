@@ -1,7 +1,7 @@
 services:
   db:
     image: pgvector/pgvector:pg16
-    container_name: knowhow_db
+    container_name: pastlead_db
     environment:
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
@@ -10,6 +10,42 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U user -d knowhow_db" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    container_name: pastlead_backend
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://user:password@db:5432/knowhow_db
+    volumes:
+      - ./backend:/app
+      - ./Takeout:/app/Takeout # Mount Takeout dir to access mbox
+      # Mount model cache to persist downloaded models
+      - huggingface_cache:/root/.cache/huggingface
+
+  frontend:
+    build: ./frontend
+    container_name: pastlead_frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
 
 volumes:
   postgres_data:
+  huggingface_cache:
