@@ -109,4 +109,9 @@ class IgnoreList(Base):
 
 
 def create_tables():
+    # Ensure vector extension exists BEFORE creating tables with VECTOR columns
+    with engine.connect() as conn:
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        conn.commit()
+    
     Base.metadata.create_all(bind=engine)
