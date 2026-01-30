@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, MetaData, Table, Column, String, Integer, DateTime, Boolean, Numeric, ForeignKey, Text, Index, BigInteger
+from sqlalchemy import create_engine, MetaData, Table, Column, String, Integer, DateTime, Boolean, Numeric, ForeignKey, Text, Index, BigInteger, Float, JSON, text
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.sql import func
