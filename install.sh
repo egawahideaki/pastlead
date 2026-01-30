@@ -3,7 +3,7 @@ set -e
 
 # Configuration
 REPO_URL="https://github.com/egawahideaki/pastlead.git"
-INSTALL_DIR="$HOME/pastlead"
+INSTALL_DIR="$(pwd)/pastlead"
 CURRENT_DIR=$(pwd)
 
 echo "🔮 PastLead Installer"
