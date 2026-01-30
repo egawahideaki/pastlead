@@ -37,11 +37,19 @@ fi
 echo "⬇️  Setting up application at $INSTALL_DIR..."
 
 if [ -d "$INSTALL_DIR" ]; then
-    echo "   Updating existing installation..."
-    cd "$INSTALL_DIR" || exit
-    # Stash local changes if any to avoid conflict
-    git stash > /dev/null 2>&1 || true
-    git pull
+    if [ -d "$INSTALL_DIR/.git" ]; then
+        echo "   Updating existing installation..."
+        cd "$INSTALL_DIR" || exit
+        # Stash local changes if any to avoid conflict
+        git stash > /dev/null 2>&1 || true
+        git pull
+    else
+        echo "⚠️  Corrupted installation detected. Cleaning up..."
+        rm -rf "$INSTALL_DIR"
+        echo "   Cloning repository..."
+        git clone --depth 1 "$REPO_URL" "$INSTALL_DIR"
+        cd "$INSTALL_DIR" || exit
+    fi
 else
     echo "   Cloning repository..."
     git clone --depth 1 "$REPO_URL" "$INSTALL_DIR"
