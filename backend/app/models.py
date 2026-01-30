@@ -39,7 +39,7 @@ class Contact(Base):
     email = Column(Text, unique=True, index=True, nullable=False)
     name = Column(Text, nullable=True)
     company_name = Column(Text, nullable=True)
-    closeness_score = Column(Numeric(5, 2), default=0)
+    closeness_score = Column(Numeric(10, 2), default=0)
     last_contacted_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -56,7 +56,7 @@ class Thread(Base):
     message_count = Column(Integer, default=0)
     last_message_at = Column(DateTime(timezone=True))
     status = Column(Text, default='active') # active, ignored, pending_body
-    score = Column(Numeric(5, 2), default=0)
+    score = Column(Numeric(10, 2), default=0)
     metadata_ = Column(JSONB, default={})
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

@@ -140,6 +140,13 @@ def run_feature_extraction():
             
     print(f"\n✅ Feature Extraction Complete. Processed {processed} threads.")
 
+    print("   - Expanding Score Columns if needed...")
+    with engine.connect() as conn:
+        # Hotfix: Numeric(5,2) is too small. Expand to Numeric(10,2).
+        conn.execute(text("ALTER TABLE contacts ALTER COLUMN closeness_score TYPE NUMERIC(10, 2)"))
+        conn.execute(text("ALTER TABLE threads ALTER COLUMN score TYPE NUMERIC(10, 2)"))
+        conn.commit()
+
     print("   - Aggregating Contact Scores...")
     with engine.connect() as conn:
         # Simple aggregation: Sum of thread scores + Recency bonus?
