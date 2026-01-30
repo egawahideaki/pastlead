@@ -219,7 +219,7 @@ export default function Home() {
     <main className={styles.main}>
       <header className={styles.header}>
         <div className={styles.brand} onClick={() => { setSearchQuery(''); setIsSearching(false); fetchContacts(0, true); }} style={{ cursor: 'pointer' }}>
-          <h1>PastLead</h1>
+          <img src="/logo.png" alt="PastLead" className={styles.logoImage} />
           <span className={styles.badge}>Beta</span>
         </div>
         <div className={styles.stats}>
@@ -245,7 +245,7 @@ export default function Home() {
             <input
               type="text"
               className={styles.searchInput}
-              placeholder="Search conversations..."
+              placeholder="会話を検索..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
@@ -253,7 +253,7 @@ export default function Home() {
         </div>
 
         <div className={styles.sectionHeader}>
-          <h2>{isSearching ? 'Search Results (Threads)' : 'Priority Contacts'}</h2>
+          <h2>{isSearching ? '検索結果 (スレッド)' : '注目の連絡先'}</h2>
           {isSearching && (
             <div className={styles.actions}>
               <label className={styles.toggleContainer}>
