@@ -9,7 +9,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ./docker_data/postgres:/var/lib/postgresql/data
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U user -d knowhow_db" ]
       interval: 5s
@@ -30,7 +30,7 @@ services:
       - ./backend:/app
       - ${MBOX_DIR:-./Takeout}:/app/Takeout # Mount external Mbox dir dynamically
       # Mount model cache to persist downloaded models
-      - huggingface_cache:/root/.cache/huggingface
+      - ./docker_data/huggingface_cache:/root/.cache/huggingface
 
   frontend:
     build: ./frontend
@@ -45,7 +45,3 @@ services:
       - ./frontend:/app
       - /app/node_modules
       - /app/.next
-
-volumes:
-  postgres_data:
-  huggingface_cache:
