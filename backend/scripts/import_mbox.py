@@ -321,8 +321,9 @@ def main():
         
     target_path = sys.argv[1]
     
-    # Create tables if not exist
-    Base.metadata.create_all(bind=engine)
+    # Create tables if not exist (Must use create_tables vs create_all to enable vector extension)
+    from app.models import create_tables
+    create_tables()
     
     session = Session(bind=engine)
     try:
