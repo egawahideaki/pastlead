@@ -70,11 +70,12 @@ def run_feature_extraction():
             if not batch_tids: break
             
             # Fetch messages for this batch of threads
-            # Using IN clause
+            # Need sent_at and contact_id (sender) for advanced scoring
             stmt_msgs = text("""
-                SELECT thread_id, content_body, sender_type
+                SELECT thread_id, content_body, sent_at, contact_id
                 FROM messages
                 WHERE thread_id = ANY(:tids)
+                ORDER BY sent_at ASC
             """)
             msgs = conn.execute(stmt_msgs, {"tids": batch_tids}).fetchall()
             
@@ -86,12 +87,15 @@ def run_feature_extraction():
             
             updates = []
             
+            import math
+            import datetime
+
             for tid in batch_tids:
                 messages = thread_data[tid]
                 
+                # 1. Financial Value Scan
                 max_val = 0
                 found_list = []
-                
                 for msg in messages:
                     # msg[1] is content_body
                     if msg[1]:
@@ -99,25 +103,55 @@ def run_feature_extraction():
                          if val > max_val: max_val = val
                          found_list.extend(vals)
                 
-                # Dedupe found_list
                 found_list = sorted(list(set(found_list)), reverse=True)
                 
-                # Heuristic Score
-                # Base score = 0
-                # +1 per message (density)
-                # + Log(Value) ? Or just linear for now? 
-                # Let's do: Log10(Value + 1) * 10 + MsgCount
-                import math
-                val_score = 0
-                if max_val > 0:
-                    val_score = math.log10(max_val) * 10
+                # 2. Interactivity (Unique Senders)
+                senders = set(m[3] for m in messages if m[3] is not None) # msg[3] is contact_id
+                unique_senders = len(senders)
                 
-                final_score = val_score + len(messages)
+                # 3. Density (Average Time Gap)
+                density_bonus = 1.0
+                if len(messages) > 1:
+                    timestamps = [m[2] for m in messages if m[2]]
+                    if len(timestamps) > 1:
+                        total_gap = (timestamps[-1] - timestamps[0]).total_seconds()
+                        avg_gap = total_gap / (len(timestamps) - 1)
+                        
+                        # High Density: < 1 hour avg gap -> x1.5
+                        if avg_gap < 3600: density_bonus = 1.5
+                        # Medium: < 1 day -> x1.2
+                        elif avg_gap < 86400: density_bonus = 1.2
+                        # Low: > 1 week -> x0.8
+                        elif avg_gap > 604800: density_bonus = 0.8
+                
+                # --- SCORING FORMULA ---
+                # A. Base Volume
+                base_score = float(len(messages))
+                
+                # B. Financial Impact (Log Scale)
+                # 10,000yen -> log10=4 -> 8 pts
+                # 1,000,000yen -> log10=6 -> 12 pts
+                financial_score = 0
+                if max_val > 0:
+                    financial_score = math.log10(max_val) * 2.0
+                
+                # C. Interactivity Multiplier
+                # One-way (1 sender) = 1.0 (No bonus, maybe penalty?)
+                # Two-way (2+ senders) = 1.5
+                interact_mult = 1.5 if unique_senders >= 2 else 1.0
+                
+                if unique_senders == 1 and len(messages) > 5:
+                     # Penalize long monologue (e.g. newsletters)
+                     interact_mult = 0.5
+
+                final_score = (base_score + financial_score) * density_bonus * interact_mult
                 
                 meta = {
                     "estimated_value": max_val,
-                    "all_values": found_list[:5], # Top 5
-                    "message_qty": len(messages)
+                    "all_values": found_list[:5],
+                    "message_qty": len(messages),
+                    "unique_senders": unique_senders,
+                    "density_bonus": density_bonus
                 }
                 
                 updates.append({
