@@ -54,10 +54,8 @@ def main():
     
     # 2. Extract Bodies (Decode content) from the imported data
     # This is CRITICAL because import_mbox_fast only sets "Pending extraction"
-    # We pass the mbox path just in case, but usually it reads from DB or Raw file?
-    # extract_bodies_retry.py usually reads from DB messages where content is pending.
-    # Let's check which script is best. 'extract_bodies.py' seems standard.
-    if not run_step("extract_bodies.py"):
+    # We pass the mbox path to scan for bodies matching specific Message-IDs
+    if not run_step("extract_bodies.py", [args.mbox_path]):
         sys.exit(1)
 
     # 3. Reconstruct Threads (Strict Version is usually best)
