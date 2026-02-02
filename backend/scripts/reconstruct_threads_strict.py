@@ -74,44 +74,16 @@ def reconstruct_threads_hybrid():
 
         print(f"     -> built Graph: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges.")
         
-        # 2. Subject Linking Phase (Conservative)
-        # We only link "Islands" that share EXACT normalized subject
-        # BUT we must be careful not to merge generic subjects like "Hello" or "Inquiry".
-        # Let's count subject frequency first.
+        # 2. Subject Linking Phase (DISABLED for Strict Mode V2)
+        # We previously merged threads with same subject, but this caused massive "super-threads"
+        # mixing unrelated people (e.g. "Meeting request", "Thank you").
+        # Detailed analysis showed that aggressive subject normalization caused this.
+        # To ensure privacy and correctness, we will rely 100% on Message-ID headers (In-Reply-To/References).
+        # This causes some fragmentation (if headers are missing), but that is better than mixing data.
         
-        # components = list(nx.connected_components(G))
-        # This gives us "Strict Header Threads".
+        print("   - Subject Linking DISABLED. Using strict header-based threading only.")
         
-        # Now we want to merge these Strict Threads if they share a Subject.
-        # But only if the subject is "specific enough" (heuristic?).
-        # Or, we only merge if they share Subject AND (common participants? or...?)
-        
-        # User Feedback: "Merged distinct conversations" -> Strict separation is good.
-        # User Feedback: "Merged same person distinct topics" -> Strict separation is good.
-        
-        # The failed case (Id 8752) was likely "No Headers" -> All bunched together?
-        # A previous script might have bunched them by subject.
-        # WITH STRICT HEADER LOGIC, they should separate unless they have same Subject AND logic merges them.
-        
-        # Wait, if I use NetworkX connected components on just headers, 
-        # any message WITHOUT headers becomes an isolated component.
-        # This is exactly what we want for "Correctness" in User's eyes (better to split than merge).
-        
-        # So, the "Hybrid" approach is:
-        # 1. Trust Headers 100%.
-        # 2. If NO headers (isolated node), leave it isolated? 
-        #    -> User says "Same person, updated topic".
-        #    -> If I respond to an old email, headers link it.
-        #    -> If I compose NEW email to same person, headers DO NOT link it.
-        #    -> It SHOULD be a new thread.
-        
-        # So... Strict Header Logic is actually what GMail does.
-        # Why did Id 8752 become huge? 
-        # Because we merged by Subject previously.
-        # Now we are UN-merging.
-        
-        # We just need to make sure we assign NEW unique thread IDs to each Component.
-        
+        # Determine components purely from the Header Graph (G)
         components = list(nx.connected_components(G))
         print(f"     -> Identified {len(components)} distinct threads.")
         
