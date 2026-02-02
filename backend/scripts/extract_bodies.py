@@ -7,8 +7,37 @@ from sqlalchemy import text
 from app.models import engine, Message
 import time
 
-MBOX_FILE = "すべてのメール（迷惑メール、ゴミ箱のメールを含む）-002.mbox"
+import argparse
+import unicodedata
+import glob
+
 BATCH_SIZE = 500
+
+def resolve_path(path_str):
+    """
+    Handle Mac/Linux unicode normalization differences (NFC vs NFD).
+    If path not found, try to find a file in the same directory that matches similarly.
+    """
+    if os.path.exists(path_str):
+        return path_str
+    
+    # Not found directly. Try normalization check.
+    dir_name = os.path.dirname(path_str)
+    base_name = os.path.basename(path_str)
+    
+    if not os.path.exists(dir_name):
+        return None # Directory itself missing
+        
+    normalized_target = unicodedata.normalize('NFC', base_name)
+    
+    for f in os.listdir(dir_name):
+        f_nfc = unicodedata.normalize('NFC', f)
+        if f_nfc == normalized_target:
+            return os.path.join(dir_name, f)
+            
+    # Still not found? Try loose match?
+    # Maybe the input path from shell expansion was weird.
+    return None
 
 def get_text_from_html(html_content):
     try:
@@ -78,8 +107,20 @@ def extract_body(msg):
     # Sanitize NUL characters which PostgreSQL cannot handle
     return body.strip().replace('\x00', '')
 
-def run_extraction():
+def run_extraction(mbox_path):
     print("📖 Starting Content Extraction (Phase 2)...")
+    
+    real_path = resolve_path(mbox_path)
+    if not real_path:
+        print(f"❌ Error: {mbox_path} not found (even after normalization check).")
+        # Fix: Show what IS there to help debug
+        try:
+            d = os.path.dirname(mbox_path)
+            print(f"   Files in {d}: {os.listdir(d)}")
+        except: pass
+        return
+        
+    print(f"   - Resolved Mbox path: {real_path}")
     
     with engine.connect() as conn:
         print("   - Fetching target message IDs (Active Threads only)...")
@@ -101,17 +142,13 @@ def run_extraction():
             print("   - No pending messages found.")
             return
 
-        print("   - Scanning Mbox file...")
+        print(f"   - Scanning Mbox file: {real_path}")
         
-        if not os.path.exists(MBOX_FILE):
-             print(f"❌ Error: {MBOX_FILE} not found.")
-             return
-
         updates = []
         extracted_count = 0
         
         # Open Mbox in binary mode for speed
-        with open(MBOX_FILE, 'rb') as f:
+        with open(real_path, 'rb') as f:
             buffer = []
             for line in f:
                 if line.startswith(b'From '):
@@ -173,4 +210,8 @@ def run_extraction():
         print(f"✅ Extraction Complete. Updated {extracted_count} messages.")
 
 if __name__ == "__main__":
-    run_extraction()
+    parser = argparse.ArgumentParser(description="Extract bodies from Mbox for pending messages")
+    parser.add_argument("mbox_path", help="Path to the .mbox file")
+    args = parser.parse_args()
+    
+    run_extraction(args.mbox_path)
