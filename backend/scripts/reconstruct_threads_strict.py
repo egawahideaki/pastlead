@@ -81,69 +81,48 @@ def reconstruct_threads_hybrid():
         print("   - Pruning suspicious edges based on Subject Mismatch...")
         
         edges_to_remove = []
-        pruned_count = 0
         
-        def tokenize(text):
-            # Simple tokenizer: alphanumeric only, lowercase
-            return set(re.findall(r'\w+', text.lower()))
+        def get_bigrams(text):
+            # Character bigrams for better Japanese similarity check
+            # e.g. "東京都" -> {"東京", "京都"}
+            if not text: return set()
+            normalized = re.sub(r'\s+', '', text.lower()) # Remove spaces
+            if len(normalized) < 2: return set([normalized])
+            return set(normalized[i:i+2] for i in range(len(normalized)-1))
 
         for u, v in G.edges():
-            # u, v are Message-IDs (or PK:x)
-            # data is in G.nodes[u]
-            
             sub_u = G.nodes[u].get('subject', '') or ""
             sub_v = G.nodes[v].get('subject', '') or ""
             
-            # If either is empty, we give benefit of doubt (keep link)
-            # Often replies have empty subject or just "Re:" which normalizes to empty?
-            # No, normalize_subject strips Re but keeps text.
-            if not sub_u or not sub_v:
+            if not sub_u or not sub_v: continue
+            if sub_u == sub_v: continue
+                
+            # Basic containment check (Strongest signal for Re/Fwd)
+            if sub_u in sub_v or sub_v in sub_u:
                 continue
-                
-            # If exact match, keep
-            if sub_u == sub_v:
-                continue
-                
-            # Check Similarity
-            # Jaccard Index of tokens
-            tokens_u = tokenize(sub_u)
-            tokens_v = tokenize(sub_v)
+
+            # N-gram Jaccard Similarity
+            bigrams_u = get_bigrams(sub_u)
+            bigrams_v = get_bigrams(sub_v)
             
-            if not tokens_u or not tokens_v:
-                continue # Cannot judge
+            if not bigrams_u or not bigrams_v:
+                continue 
                 
-            intersection = tokens_u.intersection(tokens_v)
-            union = tokens_u.union(tokens_v)
+            intersection = bigrams_u.intersection(bigrams_v)
+            union = bigrams_u.union(bigrams_v)
             
-            jaccard = len(intersection) / len(union)
+            jaccard = len(intersection) / len(union) if union else 0.0
             
-            # Threshold: How different is "Too different"?
+            # Use stricter threshold.
+            # 0.4 means at least 40% of character pairs are shared.
+            # "Project A" vs "Project B" -> likely > 0.8
             # "Meeting" vs "Invoice" -> 0.0
-            # "Project A" vs "Re: Project A" -> ~1.0
-            # "Project A Update" vs "Project A Final" -> ~0.6
-            
-            # If Jaccard is very low, it implies subject change.
-            # While subjects CAN change in a thread, usually they retain some keywords.
-            # If completely disjoint, it's suspicious IF it was a weak header link.
-            # But here we assume header link is potentially "System ID".
-            
-            if jaccard < 0.1: # Very low similarity
-                 # Double check: sometimes Japanese has no spaces -> re.findall \w+ gets nothing?
-                 # Actually \w+ matches kanji in Python 3.
-                 # But single big token? 
-                 # e.g. "請求書送付" vs "見積書" -> Disjoint.
-                 
-                 # Let's try Levenshtein or detailed check?
-                 # Or just "Is one contained in another?"
-                 if sub_u in sub_v or sub_v in sub_u:
-                     continue
-                     
-                 # Mark for removal
-                 # print(f"Cutting: {sub_u} <//> {sub_v}")
+            if jaccard < 0.4: 
+                 # print(f"Cutting edge: '{sub_u}' <//> '{sub_v}' (Sim: {jaccard:.2f})")
                  edges_to_remove.append((u, v))
                  
         G.remove_edges_from(edges_to_remove)
-        print(f"     -> Pruned {len(edges_to_remove)} edges due to subject mismatch.")
+        print(f"     -> Pruned {len(edges_to_remove)} edges due to subject mismatch (Strict V3).")
         
         # 2. Subject Linking Phase (DISABLED for Strict Mode V2)
         # We previously merged threads with same subject, but this caused massive "super-threads"
