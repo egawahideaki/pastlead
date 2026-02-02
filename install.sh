@@ -48,6 +48,7 @@ LOCATIONS=(
     "$HOME/Documents"
 )
 
+set +e # Don't exit on find errors (e.g. Permission denied)
 for loc in "${LOCATIONS[@]}"; do
     if [ -d "$loc" ]; then
         # Find first mbox file
@@ -58,6 +59,7 @@ for loc in "${LOCATIONS[@]}"; do
         fi
     fi
 done
+set -e
 
 if [ -n "$MBOX_CANDIDATE" ]; then
     echo "📦 Found mail data: $MBOX_CANDIDATE"
