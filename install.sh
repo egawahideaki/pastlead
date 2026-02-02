@@ -51,8 +51,9 @@ LOCATIONS=(
 set +e # Don't exit on find errors (e.g. Permission denied)
 for loc in "${LOCATIONS[@]}"; do
     if [ -d "$loc" ]; then
-        # Find first mbox file
-        FOUND=$(find "$loc" -maxdepth 2 -name "*.mbox" -print -quit 2>/dev/null)
+        echo "   Checking $loc..."
+        # Find first mbox file. Use || true to prevent exit on error return code.
+        FOUND=$(find "$loc" -maxdepth 2 -name "*.mbox" -print -quit 2>/dev/null || true)
         if [ -n "$FOUND" ]; then
             MBOX_CANDIDATE="$FOUND"
             break
