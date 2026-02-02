@@ -165,6 +165,20 @@ def process_mbox(file_path, session):
     
     # Pre-fetch existing contacts to avoid dup errors if upsert not supported (we use upsert though)
     
+    # --- RESUME LOGIC: Pre-load existing Message-IDs to skip heavy processing ---
+    print("   ⏳ Loading existing messages for resume capability...")
+    existing_mids = set()
+    try:
+        # Use a separate lightweight connection to fetch IDs
+        with engine.connect() as conn:
+            # Check if table exists first (it should since we ran create_tables)
+            result = conn.execute(text("SELECT message_id FROM messages"))
+            for row in result:
+                existing_mids.add(row[0])
+        print(f"   ⏩ Found {len(existing_mids)} existing messages. Will skip them.")
+    except Exception as e:
+        print(f"   ⚠️ Could not load existing messages (first run?): {e}")
+
     for message in mbox:
         try:
             # 1. Parse Headers
@@ -175,6 +189,13 @@ def process_mbox(file_path, session):
             if msg_id.startswith('<') and msg_id.endswith('>'):
                 msg_id = msg_id[1:-1]
             
+            # SKIPPING LOGIC
+            if msg_id in existing_mids:
+                count += 1
+                if count % 1000 == 0:
+                    print(f"   ⏩ Skipped {count} (already exists)...", end='\r')
+                continue
+
             subject = decode_mime_header(message.get('Subject', ''))
             
             from_hdr = decode_mime_header(message.get('From', ''))
