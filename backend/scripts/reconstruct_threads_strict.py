@@ -74,6 +74,77 @@ def reconstruct_threads_hybrid():
 
         print(f"     -> built Graph: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges.")
         
+        # --- Strict V3: Subject Consistency Pruning ---
+        # Issue: Generic System IDs or Contact Forms can link unrelated conversations.
+        # Solution: If two linked messages have TOTALLY different subjects, prune the edge.
+        
+        print("   - Pruning suspicious edges based on Subject Mismatch...")
+        
+        edges_to_remove = []
+        pruned_count = 0
+        
+        def tokenize(text):
+            # Simple tokenizer: alphanumeric only, lowercase
+            return set(re.findall(r'\w+', text.lower()))
+
+        for u, v in G.edges():
+            # u, v are Message-IDs (or PK:x)
+            # data is in G.nodes[u]
+            
+            sub_u = G.nodes[u].get('subject', '') or ""
+            sub_v = G.nodes[v].get('subject', '') or ""
+            
+            # If either is empty, we give benefit of doubt (keep link)
+            # Often replies have empty subject or just "Re:" which normalizes to empty?
+            # No, normalize_subject strips Re but keeps text.
+            if not sub_u or not sub_v:
+                continue
+                
+            # If exact match, keep
+            if sub_u == sub_v:
+                continue
+                
+            # Check Similarity
+            # Jaccard Index of tokens
+            tokens_u = tokenize(sub_u)
+            tokens_v = tokenize(sub_v)
+            
+            if not tokens_u or not tokens_v:
+                continue # Cannot judge
+                
+            intersection = tokens_u.intersection(tokens_v)
+            union = tokens_u.union(tokens_v)
+            
+            jaccard = len(intersection) / len(union)
+            
+            # Threshold: How different is "Too different"?
+            # "Meeting" vs "Invoice" -> 0.0
+            # "Project A" vs "Re: Project A" -> ~1.0
+            # "Project A Update" vs "Project A Final" -> ~0.6
+            
+            # If Jaccard is very low, it implies subject change.
+            # While subjects CAN change in a thread, usually they retain some keywords.
+            # If completely disjoint, it's suspicious IF it was a weak header link.
+            # But here we assume header link is potentially "System ID".
+            
+            if jaccard < 0.1: # Very low similarity
+                 # Double check: sometimes Japanese has no spaces -> re.findall \w+ gets nothing?
+                 # Actually \w+ matches kanji in Python 3.
+                 # But single big token? 
+                 # e.g. "請求書送付" vs "見積書" -> Disjoint.
+                 
+                 # Let's try Levenshtein or detailed check?
+                 # Or just "Is one contained in another?"
+                 if sub_u in sub_v or sub_v in sub_u:
+                     continue
+                     
+                 # Mark for removal
+                 # print(f"Cutting: {sub_u} <//> {sub_v}")
+                 edges_to_remove.append((u, v))
+                 
+        G.remove_edges_from(edges_to_remove)
+        print(f"     -> Pruned {len(edges_to_remove)} edges due to subject mismatch.")
+        
         # 2. Subject Linking Phase (DISABLED for Strict Mode V2)
         # We previously merged threads with same subject, but this caused massive "super-threads"
         # mixing unrelated people (e.g. "Meeting request", "Thank you").
