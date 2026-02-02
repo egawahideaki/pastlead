@@ -75,10 +75,12 @@ echo "⬇️  Installing PastLead to $INSTALL_DIR..."
 
 if [ -d "$INSTALL_DIR" ]; then
     echo "   Update: Removing old installation..."
-    # Backup .env if exists? Currently we overwrite logic implies clean install.
-    # But let's be safe. If we want persistence, we should keep postgres_data volume.
-    # This script assumes code update.
-    rm -rf "$INSTALL_DIR"
+    # Try accessible remove first
+    if ! rm -rf "$INSTALL_DIR" 2>/dev/null; then
+        echo "   ⚠️  Permission denied (Docker created files detected)."
+        echo "   🔑 Sudo password is required to clean up old installation:"
+        sudo rm -rf "$INSTALL_DIR"
+    fi
 fi
 
 mkdir -p "$INSTALL_DIR"
