@@ -123,15 +123,13 @@ def run_extraction(mbox_path):
     print(f"   - Resolved Mbox path: {real_path}")
     
     with engine.connect() as conn:
-        print("   - Fetching target message IDs (Active Threads only)...")
-        # Get message_ids for ACTIVE threads where body is 'Pending extraction'
-        # Also select ID (primary key) for faster update
+        print("   - Fetching target message IDs (ALL Pending messages)...")
+        # Get message_ids for ALL messages where body is 'Pending extraction'
+        # Regardless of thread status (active/ignored) to avoid UI errors
         stmt = text("""
-            SELECT m.message_id 
-            FROM messages m
-            JOIN threads t ON m.thread_id = t.id
-            WHERE t.status = 'active'
-            AND m.content_body = 'Pending extraction'
+            SELECT message_id 
+            FROM messages
+            WHERE content_body = 'Pending extraction'
         """)
         result = conn.execute(stmt).fetchall()
         target_ids = set(row[0] for row in result) # Set of Message-IDs (string)
