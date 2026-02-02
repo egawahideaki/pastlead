@@ -22,9 +22,15 @@ if ! docker info &> /dev/null; then
     exit 1
 fi
 
-# 2. Search for Mbox in current directory
-echo "🔍 Searching for .mbox file in current directory..."
-MBOX_FILE=$(find "$CURRENT_DIR" -maxdepth 1 -name "*.mbox" | head -n 1)
+# 2. Search for Mbox in current directory (Recursive up to depth 3)
+echo "🔍 Searching for .mbox file in current directory and subdirectories..."
+# Try finding provided argument first
+if [ -n "$1" ]; then
+    MBOX_FILE="$1"
+else
+    # Find first .mbox file within 3 levels deep
+    MBOX_FILE=$(find "$CURRENT_DIR" -maxdepth 3 -name "*.mbox" -print -quit)
+fi
 
 if [ -n "$MBOX_FILE" ]; then
     echo "📦 Found mail data: $(basename "$MBOX_FILE")"
