@@ -47,16 +47,14 @@ def main():
     print("   PastLead: Full Data Pipeline Setup    ")
     print("==========================================")
     
-    # 1. Import Mbox
+    # 1. Import Mbox (Robust Version)
+    # This now handles Subjects, Bodies, and Headers correctly in one pass using mailbox module.
     if not args.skip_import:
-        if not run_step("import_mbox_fast.py", [args.mbox_path]):
+        if not run_step("import_mbox.py", [args.mbox_path]):
             sys.exit(1)
     
-    # 2. Extract Bodies (Decode content) from the imported data
-    # This is CRITICAL because import_mbox_fast only sets "Pending extraction"
-    # We pass the mbox path to scan for bodies matching specific Message-IDs
-    if not run_step("extract_bodies.py", [args.mbox_path]):
-        sys.exit(1)
+    # 2. Extract Bodies -> REMOVED
+    # The new import_mbox.py does this automatically.
 
     # 3. Reconstruct Threads (Strict Version is usually best)
     if not run_step("reconstruct_threads_strict.py"):

@@ -50,12 +50,24 @@ def decode_mime_subject(raw_subject):
     except:
         return raw_subject
 
+import mailbox
+from email.header import decode_header, make_header
+
+def decode_mime_header(header_val):
+    if not header_val: return ""
+    try:
+        # decode_header returns list of (bytes, encoding)
+        decoded = decode_header(header_val)
+        # make_header converts it to a decent string
+        return str(make_header(decoded))
+    except:
+        return header_val
+
 def recover_subjects_fast(mbox_path):
-    print(f"🚑 Starting Subject Recovery from: {mbox_path}")
+    print(f"🚑 Starting RELIABLE Subject Recovery from: {mbox_path}")
     
     real_path = resolve_path(mbox_path)
     if not real_path:
-        # Wildcard handling usually done by shell, but if passed string literal with *...
         import glob
         matches = glob.glob(mbox_path)
         if matches:
@@ -64,108 +76,81 @@ def recover_subjects_fast(mbox_path):
             print(f"❌ Error: {mbox_path} not found.")
             return
 
-    print(f"   - Resolved Path: {real_path}")
-
-    # Pre-load all Message-IDs to filter
+    # Pre-load all Message-IDs
     with engine.connect() as conn:
         print("   - Loading existing Message-IDs...")
-        # Map message_id -> pk
-        # We process ALL messages to ensure subjects are correct (some might be raw MIME)
-        # But to save time, only process NULL ones first? 
-        # No, let's process ALL. Because current DB might have NULLs.
         rows = conn.execute(text("SELECT message_id, id FROM messages")).fetchall()
-        # Clean IDs
-        target_mids = {} # raw_str -> pk
+        target_mids = {}
         for r in rows:
-            target_mids[r[0].strip()] = r[1]
+            # Clean ID: remove angle brackets if present in DB (though DB usually has them)
+            # Standardize cleaning for lookup
+            mid_key = r[0].strip()
+            target_mids[mid_key] = r[1]
+            # Also support un-bracketed version just in case
+            if mid_key.startswith('<') and mid_key.endswith('>'):
+                target_mids[mid_key[1:-1]] = r[1]
+            else:
+                target_mids[f"<{mid_key}>"] = r[1]
             
         print(f"     -> Target count: {len(target_mids)} messages.")
-        
-    start_time = time.time()
-    processed_count = 0
-    match_count = 0
+
+    processed = 0
+    updated = 0
     updates = []
     
-    print("   - Scanning Mbox (Stream)...")
+    print("   - Iterating Mbox (mailbox module)...")
     
-    current_mid = None
-    current_subject = None
-    in_headers = False
+    # Use standard mailbox.mbox which is robust but maybe slower
+    mbox = mailbox.mbox(real_path, create=False)
     
-    batch_size = 5000
-    
-    # Pre-compile regex
-    re_mid = re.compile(r'^message-id:\s*(<[^>]+>)', re.IGNORECASE)
-    re_sub = re.compile(r'^subject:\s*(.+)', re.IGNORECASE)
-    
-    with engine.begin() as conn: # Transaction
-        with open(real_path, 'rb') as f:
-            for line in f:
-                try:
-                    line_str = line.decode('utf-8', errors='ignore')
-                except:
-                    continue
+    with engine.begin() as conn:
+        for message in mbox:
+            try:
+                mid_raw = message.get('message-id', '').strip()
+                if not mid_raw: continue
                 
-                if line_str.startswith('From '):
-                    # End of previous message
-                    if current_mid and current_subject and current_mid in target_mids:
-                        # Found a match!
-                        pk = target_mids[current_mid]
-                        
-                        # Decode MIME
-                        final_sub = decode_mime_subject(current_subject)
-                        
-                        updates.append({'pk': pk, 'sub': final_sub})
-                        match_count += 1
-                        
-                        if len(updates) >= batch_size:
-                            conn.execute(
-                                text("UPDATE messages SET subject = :sub WHERE id = :pk"),
-                                updates
-                            )
-                            updates = []
-                            print(f"     ... updated {match_count}", end='\r')
-                            
-                    # Reset
-                    current_mid = None
-                    current_subject = None
-                    in_headers = True
-                    processed_count += 1
-                    if processed_count % 1000 == 0:
-                        print(f"     ... scanned {processed_count} msgs, updated {match_count}", end='\r')
-                    continue
+                # Check match
+                # Try raw, try cleaned
+                pk = None
+                if mid_raw in target_mids:
+                    pk = target_mids[mid_raw]
+                else:
+                    # Clean brackets
+                    clean = mid_raw.strip('<>')
+                    if clean in target_mids:
+                        pk = target_mids[clean]
                 
-                if not in_headers: continue
-                
-                if line_str.strip() == "":
-                    in_headers = False
-                    continue
+                if pk:
+                    sub_raw = message.get('subject', '')
+                    final_sub = decode_mime_header(sub_raw)
                     
-                # Regex Parsing (Better than startswith for spacing)
-                m_mid = re_mid.match(line_str)
-                if m_mid:
-                    current_mid = m_mid.group(1).strip()
-                    continue
+                    updates.append({'pk': pk, 'sub': final_sub})
+                    updated += 1
+                    
+                    if len(updates) >= 1000:
+                        conn.execute(
+                            text("UPDATE messages SET subject = :sub WHERE id = :pk"),
+                            updates
+                        )
+                        updates = []
+                        print(f"     ... updated {updated}", end='\r')
+            
+            except Exception as e:
+                # Malformed message?
+                continue
                 
-                m_sub = re_sub.match(line_str)
-                if m_sub:
-                    current_subject = m_sub.group(1).strip()
-                    continue
-
-            # Flush last
-            if current_mid and current_subject and current_mid in target_mids:
-                 pk = target_mids[current_mid]
-                 final_sub = decode_mime_subject(current_subject)
-                 updates.append({'pk': pk, 'sub': final_sub})
-                 match_count += 1
+            processed += 1
+            if processed % 1000 == 0:
+                 print(f"     ... scanned {processed}, found {updated}", end='\r')
                  
-            if updates:
-                conn.execute(
-                    text("UPDATE messages SET subject = :sub WHERE id = :pk"),
-                    updates
-                )
-    
-    print(f"\n✅ Recovery Complete. Updated {match_count} subjects.")
+        # Final flush
+        if updates:
+             conn.execute(
+                text("UPDATE messages SET subject = :sub WHERE id = :pk"),
+                updates
+            )
+            
+    print(f"\n✅ Recovery Complete. Updated {updated} subjects.")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
