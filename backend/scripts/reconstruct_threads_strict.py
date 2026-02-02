@@ -82,47 +82,60 @@ def reconstruct_threads_hybrid():
         
         edges_to_remove = []
         
-        def get_bigrams(text):
-            # Character bigrams for better Japanese similarity check
-            # e.g. "東京都" -> {"東京", "京都"}
-            if not text: return set()
-            normalized = re.sub(r'\s+', '', text.lower()) # Remove spaces
-            if len(normalized) < 2: return set([normalized])
-            return set(normalized[i:i+2] for i in range(len(normalized)-1))
+        def normalize_for_compare(text):
+            if not text: return ""
+            # Remove Re:, Fwd: etc.
+            s = re.sub(r'^(re|fwd|fw|aw|antw|回复|回覆|転送|返信)[:：]\s*', '', text, flags=re.IGNORECASE).strip()
+            # Remove spaces
+            return re.sub(r'\s+', '', s.lower())
 
+        def get_bigrams(normalized_text):
+            if len(normalized_text) < 2: return set([normalized_text])
+            return set(normalized_text[i:i+2] for i in range(len(normalized_text)-1))
+
+        print("   - Pruning edges (detailed log):")
+        
         for u, v in G.edges():
-            sub_u = G.nodes[u].get('subject', '') or ""
-            sub_v = G.nodes[v].get('subject', '') or ""
+            raw_u = G.nodes[u].get('subject', '') or ""
+            raw_v = G.nodes[v].get('subject', '') or ""
             
-            if not sub_u or not sub_v: continue
-            if sub_u == sub_v: continue
-                
-            # Basic containment check (Strongest signal for Re/Fwd)
-            if sub_u in sub_v or sub_v in sub_u:
-                continue
+            if not raw_u or not raw_v: continue
+            
+            norm_u = normalize_for_compare(raw_u)
+            norm_v = normalize_for_compare(raw_v)
+            
+            if not norm_u or not norm_v: continue
+            
+            # If exact match after normalization, keep
+            if norm_u == norm_v: continue
+            
+            # If one contains the other (e.g. "ProjectA" vs "ProjectA Update") -> Keep
+            # But only if length difference is not huge
+            if norm_u in norm_v or norm_v in norm_u:
+                 # Check length ratio to avoid "A" matching "Apple"
+                 len_min = min(len(norm_u), len(norm_v))
+                 len_max = max(len(norm_u), len(norm_v))
+                 if len_min / len_max > 0.3: # At least 30% length
+                     continue
 
             # N-gram Jaccard Similarity
-            bigrams_u = get_bigrams(sub_u)
-            bigrams_v = get_bigrams(sub_v)
+            bigrams_u = get_bigrams(norm_u)
+            bigrams_v = get_bigrams(norm_v)
             
-            if not bigrams_u or not bigrams_v:
-                continue 
-                
             intersection = bigrams_u.intersection(bigrams_v)
             union = bigrams_u.union(bigrams_v)
             
             jaccard = len(intersection) / len(union) if union else 0.0
             
-            # Use stricter threshold.
-            # 0.4 means at least 40% of character pairs are shared.
-            # "Project A" vs "Project B" -> likely > 0.8
-            # "Meeting" vs "Invoice" -> 0.0
-            if jaccard < 0.4: 
-                 # print(f"Cutting edge: '{sub_u}' <//> '{sub_v}' (Sim: {jaccard:.2f})")
+            # Threshold 0.3: Allow some variation but cut total mismatch
+            # "Meeting" (me,ee,et,ti,in,ng) vs "Invoice" (in,nv,vo,oi,ic,ce) -> 0.
+            if jaccard < 0.3: 
+                 # DEBUG: Print what we are cutting
+                 print(f"     ✂️ CUT: '{raw_u}' <//> '{raw_v}' (Sim: {jaccard:.2f})")
                  edges_to_remove.append((u, v))
                  
         G.remove_edges_from(edges_to_remove)
-        print(f"     -> Pruned {len(edges_to_remove)} edges due to subject mismatch (Strict V3).")
+        print(f"     -> Pruned {len(edges_to_remove)} edges due to subject mismatch.")
         
         # 2. Subject Linking Phase (DISABLED for Strict Mode V2)
         # We previously merged threads with same subject, but this caused massive "super-threads"
