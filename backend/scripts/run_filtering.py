@@ -12,16 +12,16 @@ def run_filtering():
         conn.commit()
         
         # 1. Filter "Too Many Messages" (Likely Newsletters/System Logs)
-        # Real human conversations rarely go beyond 50 messages in a single thread structure.
-        print("   - Marking high-frequency threads (>50 msgs) as 'ignored'...")
+        # Relaxed threshold to 300 based on user feedback (projects can be large).
+        print("   - Marking very high-frequency threads (>300 msgs) as 'ignored'...")
         stmt_high_freq = text("""
             UPDATE threads 
             SET status = 'ignored' 
-            WHERE message_count > 50 
+            WHERE message_count > 300 
             AND status = 'active';
         """)
         result = conn.execute(stmt_high_freq)
-        print(f"     -> {result.rowcount} threads ignored (too many messages).")
+        print(f"     -> {result.rowcount} threads ignored (too many messages > 300).")
 
         # 2. Filter by Sender Email Keywords (Blacklist)
         print("   - Marking bulk/notification threads as 'ignored'...")
