@@ -70,23 +70,15 @@ def run_feature_extraction():
             if not batch_tids: break
             
             # Fetch messages for this batch of threads
-            if len(batch_tids) == 1:
-                # Handle tuple of one element syntax issue
-                 stmt_msgs = text("""
-                    SELECT thread_id, content_body, sent_at, contact_id
-                    FROM messages
-                    WHERE thread_id = :tid_val
-                    ORDER BY sent_at ASC
-                """)
-                 msgs = conn.execute(stmt_msgs, {"tid_val": batch_tids[0]}).fetchall()
-            else:
-                stmt_msgs = text("""
-                    SELECT thread_id, content_body, sent_at, contact_id
-                    FROM messages
-                    WHERE thread_id IN :tids
-                    ORDER BY sent_at ASC
-                """)
-                msgs = conn.execute(stmt_msgs, {"tids": tuple(batch_tids)}).fetchall()
+            # Manually format IN clause for SQLite stability
+            tids_str = ",".join(str(tid) for tid in batch_tids)
+            stmt_msgs = text(f"""
+                SELECT thread_id, content_body, sent_at, contact_id
+                FROM messages
+                WHERE thread_id IN ({tids_str})
+                ORDER BY sent_at ASC
+            """)
+            msgs = conn.execute(stmt_msgs).fetchall()
             
             # Group by thread
             thread_data = {tid: [] for tid in batch_tids}
