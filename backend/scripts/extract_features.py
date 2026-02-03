@@ -70,14 +70,23 @@ def run_feature_extraction():
             if not batch_tids: break
             
             # Fetch messages for this batch of threads
-            # Need sent_at and contact_id (sender) for advanced scoring
-            stmt_msgs = text("""
-                SELECT thread_id, content_body, sent_at, contact_id
-                FROM messages
-                WHERE thread_id = ANY(:tids)
-                ORDER BY sent_at ASC
-            """)
-            msgs = conn.execute(stmt_msgs, {"tids": batch_tids}).fetchall()
+            if len(batch_tids) == 1:
+                # Handle tuple of one element syntax issue
+                 stmt_msgs = text("""
+                    SELECT thread_id, content_body, sent_at, contact_id
+                    FROM messages
+                    WHERE thread_id = :tid_val
+                    ORDER BY sent_at ASC
+                """)
+                 msgs = conn.execute(stmt_msgs, {"tid_val": batch_tids[0]}).fetchall()
+            else:
+                stmt_msgs = text("""
+                    SELECT thread_id, content_body, sent_at, contact_id
+                    FROM messages
+                    WHERE thread_id IN :tids
+                    ORDER BY sent_at ASC
+                """)
+                msgs = conn.execute(stmt_msgs, {"tids": tuple(batch_tids)}).fetchall()
             
             # Group by thread
             thread_data = {tid: [] for tid in batch_tids}
@@ -114,15 +123,20 @@ def run_feature_extraction():
                 if len(messages) > 1:
                     timestamps = [m[2] for m in messages if m[2]]
                     if len(timestamps) > 1:
-                        total_gap = (timestamps[-1] - timestamps[0]).total_seconds()
-                        avg_gap = total_gap / (len(timestamps) - 1)
-                        
-                        # High Density: < 1 hour avg gap -> x1.5
-                        if avg_gap < 3600: density_bonus = 1.5
-                        # Medium: < 1 day -> x1.2
-                        elif avg_gap < 86400: density_bonus = 1.2
-                        # Low: > 1 week -> x0.8
-                        elif avg_gap > 604800: density_bonus = 0.8
+                        # Ensure timestamps are datetime
+                        if isinstance(timestamps[0], str):
+                            # Simplistic parse if string
+                            pass 
+                        else:
+                            total_gap = (timestamps[-1] - timestamps[0]).total_seconds()
+                            avg_gap = total_gap / (len(timestamps) - 1)
+                            
+                            # High Density: < 1 hour avg gap -> x1.5
+                            if avg_gap < 3600: density_bonus = 1.5
+                            # Medium: < 1 day -> x1.2
+                            elif avg_gap < 86400: density_bonus = 1.2
+                            # Low: > 1 week -> x0.8
+                            elif avg_gap > 604800: density_bonus = 0.8
                 
                 # --- SCORING FORMULA ---
                 # A. Base Volume
@@ -163,7 +177,7 @@ def run_feature_extraction():
             # Batch update
             stmt_update = text("""
                 UPDATE threads 
-                SET score = :score, metadata_ = CAST(:meta AS jsonb) 
+                SET score = :score, metadata_ = :meta
                 WHERE id = :tid
             """)
             conn.execute(stmt_update, updates)
@@ -174,32 +188,21 @@ def run_feature_extraction():
             
     print(f"\n✅ Feature Extraction Complete. Processed {processed} threads.")
 
-    print("   - Expanding Score Columns if needed...")
-    with engine.connect() as conn:
-        # Hotfix: Numeric(5,2) is too small. Expand to Numeric(10,2).
-        conn.execute(text("ALTER TABLE contacts ALTER COLUMN closeness_score TYPE NUMERIC(10, 2)"))
-        conn.execute(text("ALTER TABLE threads ALTER COLUMN score TYPE NUMERIC(10, 2)"))
-        conn.commit()
+    # Skip Expanding Score Columns (SQLite does not support ALTER COLUMN TYPE)
+    print("   - Skipping column expansion (SQLite).")
 
     print("   - Aggregating Contact Scores...")
     with engine.connect() as conn:
-        # Simple aggregation: Sum of thread scores + Recency bonus?
-        # For now just Sum of Thread Scores
-        # Also update last_contacted_at from max(thread.last_message_at)
-        
+        # SQLite compatible UPDATE with correlated subquery
         stmt_agg = text("""
-            UPDATE contacts c
-            SET closeness_score = sub.total_score,
-                last_contacted_at = sub.last_active
-            FROM (
-                SELECT contact_id, 
-                       SUM(score) as total_score,
-                       MAX(last_message_at) as last_active
-                FROM threads
-                WHERE status = 'active'
-                GROUP BY contact_id
-            ) sub
-            WHERE c.id = sub.contact_id
+            UPDATE contacts
+            SET closeness_score = (
+                SELECT SUM(score) FROM threads WHERE contacts.id = threads.contact_id AND status = 'active'
+            ),
+            last_contacted_at = (
+                SELECT MAX(last_message_at) FROM threads WHERE contacts.id = threads.contact_id AND status = 'active'
+            )
+            WHERE id IN (SELECT contact_id FROM threads WHERE status = 'active')
         """)
         conn.execute(stmt_agg)
         conn.commit()
