@@ -131,8 +131,14 @@ def run_feature_extraction():
                             elif avg_gap > 604800: density_bonus = 0.8
                 
                 # --- SCORING FORMULA ---
-                # A. Base Volume
-                base_score = float(len(messages))
+                # A. Base Volume (Capped / Log-scaled for spam prevention)
+                msg_count = len(messages)
+                if msg_count <= 20:
+                    base_score = float(msg_count)
+                else:
+                    # Logarithmic growth after 20 messages to prevent spam domination
+                    # 20 -> 20, 100 -> 20 + log(80)*2 ~= 26, 1000 -> 32
+                    base_score = 20.0 + math.log(msg_count - 19) * 2.0
                 
                 # B. Financial Impact (Log Scale)
                 # 10,000yen -> log10=4 -> 8 pts
@@ -143,14 +149,18 @@ def run_feature_extraction():
                 
                 # C. Interactivity Multiplier
                 # One-way (1 sender) = 1.0 (No bonus, maybe penalty?)
-                # Two-way (2+ senders) = 1.5
+                # Two-way (2+ senders) = 1.5 (Strong indicator of human conversation)
                 interact_mult = 1.5 if unique_senders >= 2 else 1.0
                 
-                if unique_senders == 1 and len(messages) > 5:
-                     # Penalize long monologue (e.g. newsletters)
-                     interact_mult = 0.5
+                if unique_senders == 1 and msg_count > 5:
+                     # Penalize long monologue (e.g. newsletters/DM) severely
+                     interact_mult = 0.1
 
                 final_score = (base_score + financial_score) * density_bonus * interact_mult
+                
+                # Hard cap for one-way threads (never exceed 10.0)
+                if unique_senders == 1 and final_score > 10.0:
+                    final_score = 10.0
                 
                 meta = {
                     "estimated_value": max_val,
