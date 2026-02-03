@@ -216,26 +216,66 @@ def run_feature_extraction():
     # Skip Expanding Score Columns (SQLite does not support ALTER COLUMN TYPE)
     print("   - Skipping column expansion (SQLite).")
 
-    print("   - Aggregating Contact Scores...")
+    print("   - Aggregating Contact Scores (PYTHON SIDE)...")
+    
+    # Python-side aggregation to be 100% sure
+    contact_scores = {}
+    contact_last_active = {}
+    
     with engine.connect() as conn:
-        # 1. Reset all scores to 0 first (Critical! Otherwise contacts with all-ignored threads retain old scores)
+        # Fetch all active threads with scores
+        print("     -> Reading all thread scores...")
+        rows = conn.execute(text("SELECT contact_id, score, last_message_at FROM threads WHERE status = 'active'")).fetchall()
+        
+        for r in rows:
+            cid = r[0]
+            score = r[1] or 0.0
+            last_at = r[2]
+            
+            if cid not in contact_scores:
+                contact_scores[cid] = 0.0
+                contact_last_active[cid] = None
+                
+            # MAX Score Strategy
+            if score > contact_scores[cid]:
+                contact_scores[cid] = score
+                
+            # Last Active Update
+            if last_at:
+                # Assuming last_at is datetime or string. Compare safely.
+                # If string, simple compare works for ISO.
+                current_last = contact_last_active[cid]
+                if current_last is None or str(last_at) > str(current_last):
+                    contact_last_active[cid] = last_at
+                    
+        print(f"     -> Calculated scores for {len(contact_scores)} contacts.")
+        
+        # Batch Update Contacts
+        print("     -> Updating DB...")
+        updates = []
+        for cid, score in contact_scores.items():
+            last_at = contact_last_active[cid]
+            updates.append({
+                "cid": cid,
+                "score": score,
+                "last_at": last_at
+            })
+            
+        # 1. Reset ALL to 0 first (to clean up contacts with no active threads)
         conn.execute(text("UPDATE contacts SET closeness_score = 0"))
         
-        # 2. Update with new sums
-        # SQLite compatible UPDATE with correlated subquery
-        stmt_agg = text("""
-            UPDATE contacts
-            SET closeness_score = (
-                SELECT IFNULL(MAX(score), 0) FROM threads WHERE contacts.id = threads.contact_id AND status = 'active'
-            ),
-            last_contacted_at = (
-                SELECT MAX(last_message_at) FROM threads WHERE contacts.id = threads.contact_id AND status = 'active'
-            )
-            WHERE id IN (SELECT contact_id FROM threads WHERE status = 'active')
-        """)
-        conn.execute(stmt_agg)
+        # 2. Update active ones
+        batch_size = 1000
+        stmt = text("UPDATE contacts SET closeness_score = :score, last_contacted_at = :last_at WHERE id = :cid")
+        
+        for i in range(0, len(updates), batch_size):
+            chunk = updates[i : i + batch_size]
+            conn.execute(stmt, chunk)
+            print(f"       .. {i}", end='\r')
+            
         conn.commit()
-    print("✅ Contact Scores Updated.")
+            
+    print("✅ Contact Scores Updated (Python Aggregation).")
 
 if __name__ == "__main__":
     run_feature_extraction()
