@@ -212,9 +212,25 @@ def get_contacts(
         # Pagination
         contacts = query.limit(limit).offset(offset).all()
 
-        contacts_data = []
-        
+        # Compile spam regexes once
+        import re
+        spam_patterns = [
+            r"no-?reply", r"notification", r"donotreply", r"alert",
+            r"info@", r"support@", r"newsletter", r"magazine", 
+            r"news@", r"update@", r"press@", r"editor@", 
+            r"seminar", r"survey", r"auto-?confirm", r"account@", 
+            r"admin@", r"service@", r"bouce", r"mailer-daemon",
+            r"system@", r"mailmag", r"campaign", r"shop@", r"store@",
+            r"order@", r"billing@", r"invoice@", r"noreply", r"mag2",
+            r"eigyo", r"sales@", r"marketing@", r"pr@", r"hello@"
+        ]
+        spam_regex = re.compile("|".join(spam_patterns), re.IGNORECASE)
+
         for contact in contacts:
+            # 1. Immediate Spam Check (Safety Net)
+            if contact.email and spam_regex.search(contact.email):
+                 continue
+
             # Fetch threads for this contact (limit to recent 5 for performance)
             threads = db.query(Thread)\
                 .filter(Thread.contact_id == contact.id)\
