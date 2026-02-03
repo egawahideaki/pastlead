@@ -158,16 +158,16 @@ def run_feature_extraction():
                 else:
                     score_type = "monologue"
                     # Default cap is VERY LOW.
-                    # Base visibility = 1.0
-                    final_score = 1.0
+                    # Base visibility = 0.5
+                    final_score = 0.5
                     
                     # If financial keywords present, allow slight bump but CAP HARD.
                     if max_val > 0:
-                        final_score += 2.0
+                        final_score += 0.5
                     
                     # Hard Cap for ANY single-sender thread
-                    if final_score > 3.0:
-                        final_score = 3.0
+                    if final_score > 1.0:
+                        final_score = 1.0
                         
                     # Spam Keyword Check (Body-based)
                     # Check last message for signature/footer keywords
@@ -226,7 +226,7 @@ def run_feature_extraction():
         stmt_agg = text("""
             UPDATE contacts
             SET closeness_score = (
-                SELECT IFNULL(SUM(score), 0) FROM threads WHERE contacts.id = threads.contact_id AND status = 'active'
+                SELECT IFNULL(MAX(score), 0) FROM threads WHERE contacts.id = threads.contact_id AND status = 'active'
             ),
             last_contacted_at = (
                 SELECT MAX(last_message_at) FROM threads WHERE contacts.id = threads.contact_id AND status = 'active'
