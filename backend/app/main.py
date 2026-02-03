@@ -226,6 +226,8 @@ def get_contacts(
         ]
         spam_regex = re.compile("|".join(spam_patterns), re.IGNORECASE)
 
+        contacts_data = [] # Initialize list
+
         for contact in contacts:
             # 1. Immediate Spam Check (Safety Net)
             if contact.email and spam_regex.search(contact.email):
@@ -271,10 +273,4 @@ def get_contacts(
         import traceback
         traceback.print_exc()
         print(f"Error in get_contacts: {e}")
-        return []
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        print(f"Error in get_contacts: {e}")
-        # Return empty list or error compliant structure
         return []
