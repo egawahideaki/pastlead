@@ -23,8 +23,8 @@ def run_filtering():
         result = conn.execute(stmt_high_freq)
         print(f"     -> {result.rowcount} threads ignored (too many messages > 300).")
 
-        # 2. Filter by Sender Email Keywords (Blacklist)
-        print("   - Marking bulk/notification threads as 'ignored'...")
+        # 2. Filter by Sender Email Keywords (Blacklist) - Python Logic for safety
+        print("   - Filtering blacklist keywords (Python-side check)...")
         
         blacklist = [
             'no-reply', 'noreply', 'donotreply', 'notification', 'bounces', 
@@ -33,25 +33,40 @@ def run_filtering():
             'auto-confirm', 'confirm@', 'account@', 'admin@', 'service@'
         ]
         
-        # Build OR clauses for LIKE
-        # Using simple loop to avoid complex SQL generation issues in SQLite
-        print(f"     -> Filtering blacklist keywords: {len(blacklist)} words...")
+        # Fetch all active threads with their contact emails
+        # Doing this in Python is slower but 100% reliable compared to SQLite LIKE nuances
+        stmt_fetch = text("""
+            SELECT t.id, c.email 
+            FROM threads t
+            JOIN contacts c ON t.contact_id = c.id
+            WHERE t.status = 'active'
+        """)
+        rows = conn.execute(stmt_fetch).fetchall()
         
-        count = 0
-        for word in blacklist:
-            stmt_blk = text(f"""
-                UPDATE threads 
-                SET status = 'ignored' 
-                WHERE contact_id IN (
-                    SELECT id FROM contacts WHERE LOWER(email) LIKE '%{word}%'
-                ) AND status = 'active';
-            """)
-            res = conn.execute(stmt_blk)
-            count += res.rowcount
+        ignored_tids = []
+        for row in rows:
+            tid, email = row
+            if not email: continue
             
-        print(f"     -> {count} threads ignored (blacklisted keywords).")
+            email_lower = email.lower()
+            for kw in blacklist:
+                if kw in email_lower:
+                    ignored_tids.append(tid)
+                    break
         
-        conn.commit()
+        # Batch update ignored threads
+        if ignored_tids:
+            # Chunking for SQLite limits
+            chunk_size = 500
+            for i in range(0, len(ignored_tids), chunk_size):
+                chunk = ignored_tids[i:i+chunk_size]
+                tids_str = ",".join(str(t) for t in chunk)
+                conn.execute(text(f"UPDATE threads SET status = 'ignored' WHERE id IN ({tids_str})"))
+            
+            conn.commit()
+            print(f"     -> {len(ignored_tids)} threads ignored (blacklisted keywords).")
+        else:
+            print("     -> 0 threads ignored.")
 
     print("------------------------------")
     print("🎯 Filtering Complete.")
