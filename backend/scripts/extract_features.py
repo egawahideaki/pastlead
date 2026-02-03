@@ -107,92 +107,90 @@ def run_feature_extraction():
             for tid in batch_tids:
                 messages = thread_data[tid]
                 
+                # --- NEW SCORING LOGIC (STRICT CONVERSATION CHECK) ---
+                
                 # 1. Financial Value Scan
                 max_val = 0
                 found_list = []
                 for msg in messages:
-                    # msg[1] is content_body
-                    if msg[1]:
+                    if msg[1]: # content_body
                          val, vals = extract_financials(str(msg[1]))
                          if val > max_val: max_val = val
                          found_list.extend(vals)
-                
                 found_list = sorted(list(set(found_list)), reverse=True)
-                
-                # 2. Interactivity (Unique Senders)
-                senders = set(m[3] for m in messages if m[3] is not None) # msg[3] is contact_id
+
+                # 2. Base Score & Interactivity
+                msg_count = len(messages)
+                senders = set(m[3] for m in messages if m[3] is not None)
                 unique_senders = len(senders)
                 
-                # 3. Density (Average Time Gap)
-                density_bonus = 1.0
-                if len(messages) > 1:
-                    timestamps = [m[2] for m in messages if m[2]]
-                    if len(timestamps) > 1:
-                        # Ensure timestamps are datetime
-                        if isinstance(timestamps[0], str):
-                            # Simplistic parse if string
-                            pass 
-                        else:
-                            total_gap = (timestamps[-1] - timestamps[0]).total_seconds()
-                            avg_gap = total_gap / (len(timestamps) - 1)
-                            
-                            # High Density: < 1 hour avg gap -> x1.5
-                            if avg_gap < 3600: density_bonus = 1.5
-                            # Medium: < 1 day -> x1.2
-                            elif avg_gap < 86400: density_bonus = 1.2
-                            # Low: > 1 week -> x0.8
-                            elif avg_gap > 604800: density_bonus = 0.8
+                final_score = 0.0
+                score_type = "unknown"
                 
-                # --- SCORING FORMULA ---
-                # A. Base Volume (Capped / Log-scaled for spam prevention)
-                msg_count = len(messages)
-                if msg_count <= 20:
-                    base_score = float(msg_count)
-                else:
-                    # Logarithmic growth after 20 messages to prevent spam domination
-                    # 20 -> 20, 100 -> 20 + log(80)*2 ~= 26, 1000 -> 32
-                    base_score = 20.0 + math.log(msg_count - 19) * 2.0
-                
-                # B. Financial Impact (Log Scale)
-                # 10,000yen -> log10=4 -> 8 pts
-                # 1,000,000yen -> log10=6 -> 12 pts
-                financial_score = 0
-                if max_val > 0:
-                    financial_score = math.log10(max_val) * 2.0
-                
-                # C. Interactivity Multiplier
-                # One-way (1 sender) = 1.0 (No bonus, maybe penalty?)
-                # Two-way (2+ senders) = 1.5 (Strong indicator of human conversation)
-                interact_mult = 1.5 if unique_senders >= 2 else 1.0
-                
-                if unique_senders == 1 and msg_count > 5:
-                     # Penalize long monologue (e.g. newsletters/DM) severely
-                     interact_mult = 0.1
+                # A. CONVERSATION MODE (High Value)
+                if unique_senders >= 2:
+                    score_type = "conversation"
+                    
+                    # Log-scale volume
+                    if msg_count > 20:
+                        vol_score = 20.0 + math.log(msg_count - 19) * 2.0
+                    else:
+                        vol_score = float(msg_count) * 1.2
+                        
+                    # Financials (High impact for conversations)
+                    fin_score = math.log10(max_val) * 3.0 if max_val > 0 else 0
+                    
+                    final_score = vol_score + fin_score
+                    
+                    # Density Bonus
+                    if len(messages) > 1:
+                         timestamps = [m[2] for m in messages if m[2]]
+                         # Filter None timestamps
+                         timestamps = [t for t in timestamps if t]
+                         
+                         if len(timestamps) > 1:
+                             total_gap = (timestamps[-1] - timestamps[0]).total_seconds()
+                             avg_gap = total_gap / (len(timestamps) - 1)
+                             if avg_gap < 3600: final_score *= 1.3  # Chat-like
+                             elif avg_gap < 86400: final_score *= 1.1 # Daily exchange
 
-                final_score = (base_score + financial_score) * density_bonus * interact_mult
-                
-                # Hard cap for one-way threads (never exceed 10.0)
-                if unique_senders == 1 and final_score > 10.0:
-                    final_score = 10.0
-                
-                # --- SAFETY NET: Force 0 for blacklisted contacts ---
-                # Determine thread owner (approximate from first message sender or any message)
-                # Ideally we should fetch thread.contact_id, but checking all message senders works too.
-                # If ALL senders are in blacklist, kill it.
-                is_spam = False
+                # B. MONOLOGUE MODE (Low Value / Spam Risk)
+                else:
+                    score_type = "monologue"
+                    # Default cap is VERY LOW.
+                    # Base visibility = 1.0
+                    final_score = 1.0
+                    
+                    # If financial keywords present, allow slight bump but CAP HARD.
+                    if max_val > 0:
+                        final_score += 2.0
+                    
+                    # Hard Cap for ANY single-sender thread
+                    if final_score > 3.0:
+                        final_score = 3.0
+                        
+                    # Spam Keyword Check (Body-based)
+                    # Check last message for signature/footer keywords
+                    if messages:
+                        last_body = (messages[-1][1] or "").lower()
+                        spam_triggers = ["unsubscribe", "配信停止", "送信専用", "解除", "opt-out", "donotreply", "no-reply"]
+                        if any(k in last_body for k in spam_triggers):
+                            final_score = 0.0
+                            score_type = "spam_keyword"
+
+                # Safety Net: Blacklisted Contacts (Priority Override)
                 if messages:
-                    # Check the primary contact (usually the first sender if it's incoming)
                     first_sender = messages[0][3]
                     if first_sender in blacklist_ids:
-                        is_spam = True
                         final_score = 0.0
+                        score_type = "blacklisted"
                 
                 meta = {
                     "estimated_value": max_val,
                     "all_values": found_list[:5],
-                    "message_qty": len(messages),
+                    "message_qty": msg_count,
                     "unique_senders": unique_senders,
-                    "density_bonus": density_bonus
+                    "score_type": score_type
                 }
                 
                 updates.append({
