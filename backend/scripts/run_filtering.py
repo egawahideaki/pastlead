@@ -7,19 +7,21 @@ def run_filtering():
     print("🧹 Starting filtering process (Phase 1)...")
     
     with engine.connect() as conn:
-        # 1. Reset all to active first (optional, but good for idempotency)
-        # conn.execute(text("UPDATE threads SET status = 'active'"))
+        # Reset all to active first (to allow re-run)
+        conn.execute(text("UPDATE threads SET status = 'active'"))
+        conn.commit()
         
         # 2. Filter single-message threads (No conversation)
-        print("   - Marking single-message threads as 'ignored'...")
-        stmt_single = text("""
-            UPDATE threads 
-            SET status = 'ignored' 
-            WHERE (SELECT count(*) FROM messages WHERE thread_id = threads.id) < 2
-            AND status = 'active';
-        """)
-        result = conn.execute(stmt_single)
-        print(f"     -> {result.rowcount} threads ignored (single message).")
+        # DISABLED for now to ensure we see data even if threading isn't perfect
+        # print("   - Marking single-message threads as 'ignored'...")
+        # stmt_single = text("""
+        #     UPDATE threads 
+        #     SET status = 'ignored' 
+        #     WHERE (SELECT count(*) FROM messages WHERE thread_id = threads.id) < 2
+        #     AND status = 'active';
+        # """)
+        # result = conn.execute(stmt_single)
+        # print(f"     -> {result.rowcount} threads ignored (single message).")
         
         # 3. Filter by Headers (Bulk, Notifications)
         print("   - Marking bulk/notification threads as 'ignored'...")
