@@ -48,15 +48,15 @@ def run_filtering():
             WHERE status = 'active'
             AND contact_id IN (
                 SELECT id FROM contacts 
-                WHERE email ILIKE '%no-reply%' 
-                   OR email ILIKE '%noreply%' 
-                   OR email ILIKE '%donotreply%'
-                   OR email ILIKE '%checker%'
-                   OR email ILIKE '%notification%'
-                   OR email ILIKE '%alert%'
-                   OR email ILIKE '%bounce%'
-                   OR email ILIKE 'support@%'
-                   OR email ILIKE 'info@%'
+                WHERE email LIKE '%no-reply%' 
+                   OR email LIKE '%noreply%' 
+                   OR email LIKE '%donotreply%'
+                   OR email LIKE '%checker%'
+                   OR email LIKE '%notification%'
+                   OR email LIKE '%alert%'
+                   OR email LIKE '%bounce%'
+                   OR email LIKE 'support@%'
+                   OR email LIKE 'info@%'
             );
         """)
         result = conn.execute(stmt_system)
