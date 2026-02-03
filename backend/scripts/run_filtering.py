@@ -1,5 +1,5 @@
-import os
 import sys
+import os
 from sqlalchemy import text
 from app.models import engine
 
@@ -11,90 +11,64 @@ def run_filtering():
         conn.execute(text("UPDATE threads SET status = 'active'"))
         conn.commit()
         
-        # 2. Filter single-message threads (No conversation)
-        # DISABLED for now to ensure we see data even if threading isn't perfect
-        # print("   - Marking single-message threads as 'ignored'...")
-        # stmt_single = text("""
-        #     UPDATE threads 
-        #     SET status = 'ignored' 
-        #     WHERE (SELECT count(*) FROM messages WHERE thread_id = threads.id) < 2
-        #     AND status = 'active';
-        # """)
-        # result = conn.execute(stmt_single)
-        # print(f"     -> {result.rowcount} threads ignored (single message).")
-        
-        # 3. Filter by Headers (Bulk, Notifications)
-        print("   - Marking bulk/notification threads as 'ignored'...")
-        # Note: metadata_ is JSONB. We check common bulk headers.
-        stmt_bulk = text("""
-            UPDATE threads
-            SET status = 'ignored'
-            WHERE status = 'active'
-            AND id IN (
-                SELECT DISTINCT thread_id FROM messages 
-                WHERE metadata_ ->> 'List-Unsubscribe' IS NOT NULL 
-                   OR metadata_ ->> 'Precedence' IN ('bulk', 'list', 'junk', 'auto_reply')
-                   OR metadata_ ->> 'X-Auto-Response-Suppress' IS NOT NULL
-                   OR metadata_ ->> 'Auto-Submitted' != 'no'
-            );
+        # 1. Filter "Too Many Messages" (Likely Newsletters/System Logs)
+        # Real human conversations rarely go beyond 50 messages in a single thread structure.
+        print("   - Marking high-frequency threads (>50 msgs) as 'ignored'...")
+        stmt_high_freq = text("""
+            UPDATE threads 
+            SET status = 'ignored' 
+            WHERE message_count > 50 
+            AND status = 'active';
         """)
-        result = conn.execute(stmt_bulk)
-        print(f"     -> {result.rowcount} threads ignored (bulk headers).")
-        
-        # 4. Filter by Sender Address (No-reply, etc matching)
-        # We assume contact.email holds the address.
-        print("   - Marking system accounts (noreply, info, etc) as 'ignored'...")
-        stmt_system = text("""
-            UPDATE threads
-            SET status = 'ignored'
-            WHERE status = 'active'
-            AND contact_id IN (
-                SELECT id FROM contacts 
-                WHERE email LIKE '%no-reply%' 
-                   OR email LIKE '%noreply%' 
-                   OR email LIKE '%donotreply%'
-                   OR email LIKE '%checker%'
-                   OR email LIKE '%notification%'
-                   OR email LIKE '%alert%'
-                   OR email LIKE '%bounce%'
-                   OR email LIKE 'support@%'
-                   OR email LIKE 'info@%'
-            );
-        """)
-        result = conn.execute(stmt_system)
-        print(f"     -> {result.rowcount} threads ignored (system keywords).")
+        result = conn.execute(stmt_high_freq)
+        print(f"     -> {result.rowcount} threads ignored (too many messages).")
 
-        # 5. Filter One-Way Communication (Strongest Filter)
-        # Threads where only 1 person (sender) is speaking are likely notifications.
-        # Real conversations usually involve at least 2 participants (Me + Them, or Them + Them).
-        print("   - Marking one-way threads (only 1 unique sender) as 'ignored'...")
-        stmt_oneway = text("""
-            UPDATE threads
-            SET status = 'ignored'
-            WHERE status = 'active'
-            AND (
-                SELECT count(DISTINCT contact_id) 
-                FROM messages 
-                WHERE thread_id = threads.id
-            ) < 2;
-        """)
-        result = conn.execute(stmt_oneway)
-        print(f"     -> {result.rowcount} threads ignored (one-way communication).")
+        # 2. Filter by Sender Email Keywords (Blacklist)
+        print("   - Marking bulk/notification threads as 'ignored'...")
+        
+        blacklist = [
+            'no-reply', 'noreply', 'donotreply', 'notification', 'bounces', 
+            'alert', 'info@', 'support@', 'newsletter', 'mag2', 'magazine', 
+            'news@', 'update@', 'press@', 'editor@', 'seminar@', 'survey@',
+            'auto-confirm', 'confirm@', 'account@', 'admin@', 'service@'
+        ]
+        
+        # Build OR clauses for LIKE
+        # Using simple loop to avoid complex SQL generation issues in SQLite
+        print(f"     -> Filtering blacklist keywords: {len(blacklist)} words...")
+        
+        count = 0
+        for word in blacklist:
+            stmt_blk = text(f"""
+                UPDATE threads 
+                SET status = 'ignored' 
+                WHERE contact_id IN (
+                    SELECT id FROM contacts WHERE email LIKE '%{word}%'
+                ) AND status = 'active';
+            """)
+            res = conn.execute(stmt_blk)
+            count += res.rowcount
+            
+        print(f"     -> {count} threads ignored (blacklisted keywords).")
         
         conn.commit()
+
+    print("------------------------------")
+    print("🎯 Filtering Complete.")
+
+    # Calculate stats
+    with engine.connect() as conn:
+        total = conn.execute(text("SELECT count(*) FROM threads")).scalar()
+        active = conn.execute(text("SELECT count(*) FROM threads WHERE status = 'active'")).scalar()
         
-        # Final Stats
-        result_active = conn.execute(text("SELECT count(*) FROM threads WHERE status = 'active'"))
-        active_count = result_active.scalar()
-        
-        result_total = conn.execute(text("SELECT count(*) FROM threads"))
-        total_count = result_total.scalar()
-        
-        print("-" * 30)
-        print(f"🎯 Filtering Complete.")
-        print(f"   Total Threads: {total_count}")
-        print(f"   Active Threads (Potential Leads): {active_count}")
-        print(f"   Reduction Rate: {100 - (active_count/total_count*100):.1f}%")
+        if total > 0:
+            reduction = ((total - active) / total) * 100
+        else:
+            reduction = 0
+            
+        print(f"   Total Threads: {total}")
+        print(f"   Active Threads (Potential Leads): {active}")
+        print(f"   Reduction Rate: {reduction:.1f}%")
 
 if __name__ == "__main__":
     run_filtering()
