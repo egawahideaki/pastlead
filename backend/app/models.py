@@ -90,10 +90,6 @@ class Message(Base):
     __table_args__ = (
         Index('idx_messages_thread_id', 'thread_id'),
         Index('idx_messages_contact_id', 'contact_id'),
-            postgresql_ops={'content_vector': 'vector_cosine_ops'}
-        ),
-        # Add GIN index for fast JSONB metadata search
-        Index('idx_messages_metadata', metadata_, postgresql_using='gin'),
     )
 
 class IgnoreList(Base):
@@ -106,9 +102,4 @@ class IgnoreList(Base):
 
 
 def create_tables():
-    # Ensure vector extension exists BEFORE creating tables with VECTOR columns
-    with engine.connect() as conn:
-        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-        conn.commit()
-    
     Base.metadata.create_all(bind=engine)
