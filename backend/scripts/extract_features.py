@@ -61,6 +61,19 @@ def run_feature_extraction():
         tids = [r[0] for r in tids]
         total_threads = len(tids)
         
+        # Pre-fetch Blacklisted Contact IDs (Safety net for spam)
+        blacklist_keywords = [
+            'no-reply', 'noreply', 'donotreply', 'notification', 'bounces', 
+            'alert', 'info@', 'support@', 'newsletter', 'mag2', 'magazine', 
+            'news@', 'update@', 'press@', 'editor@', 'seminar@'
+        ]
+        blacklist_ids = set()
+        for kw in blacklist_keywords:
+            ids = conn.execute(text(f"SELECT id FROM contacts WHERE LOWER(email) LIKE '%{kw}%'")).fetchall()
+            for r in ids:
+                blacklist_ids.add(r[0])
+        
+        print(f"     -> Loaded {len(blacklist_ids)} blacklisted contacts for scoring safety.")
         print(f"     -> Analyzing {total_threads} threads...")
         
         processed = 0
@@ -161,6 +174,18 @@ def run_feature_extraction():
                 # Hard cap for one-way threads (never exceed 10.0)
                 if unique_senders == 1 and final_score > 10.0:
                     final_score = 10.0
+                
+                # --- SAFETY NET: Force 0 for blacklisted contacts ---
+                # Determine thread owner (approximate from first message sender or any message)
+                # Ideally we should fetch thread.contact_id, but checking all message senders works too.
+                # If ALL senders are in blacklist, kill it.
+                is_spam = False
+                if messages:
+                    # Check the primary contact (usually the first sender if it's incoming)
+                    first_sender = messages[0][3]
+                    if first_sender in blacklist_ids:
+                        is_spam = True
+                        final_score = 0.0
                 
                 meta = {
                     "estimated_value": max_val,
