@@ -187,75 +187,40 @@ def get_contacts(
     db: Session = Depends(get_db)
 ):
     """
-    Get contacts managed by person, sorted by importance (max thread score).
-    Includes aggregated stats and list of threads.
+    Get contacts managed by person, sorted by importance (closeness_score).
+    OPTIMIZED: Uses pre-calculated/indexed columns only.
     """
     try:
-        # Subquery to aggregate metrics per contact
-        # We want contacts that have at least one thread
-        
-        # 1. Get metrics per contact
-        # max_score, thread_count, last_active
-        stats_query = db.query(
-            Thread.contact_id,
-            func.max(Thread.score).label("max_score"),
-            func.count(Thread.id).label("thread_count"),
-            func.max(Thread.last_message_at).label("last_active")
-        ).group_by(Thread.contact_id).subquery()
-
-        # 1.1 Correct "First Active" by finding the oldest message for this contact
-        first_msg_query = db.query(
-            Message.contact_id,
-            func.min(Message.sent_at).label("first_active_real")
-        ).group_by(Message.contact_id).subquery()
-
-
-        # 1.5 Get Ignore List
+        # 1.5 Get Ignore List (to filter out spam in real-time)
         ignore_items = db.query(IgnoreList).all()
         ignored_emails = [item.value for item in ignore_items if item.type == 'email']
         ignored_domains = [item.value for item in ignore_items if item.type == 'domain']
 
-        # 2. Join with Contact table and Order by max_score DESC
-        # Note: stats_query.c accesses columns of the subquery
-        query = db.query(Contact, stats_query, first_msg_query)\
-            .join(stats_query, Contact.id == stats_query.c.contact_id)\
-            .outerjoin(first_msg_query, Contact.id == first_msg_query.c.contact_id)
-
-            
+        # 2. Simple Query on Contact Table
+        query = db.query(Contact).filter(Contact.closeness_score > 0)
+        
+        # Apply filters
         if ignored_emails:
             query = query.filter(Contact.email.notin_(ignored_emails))
-        
-        # Domain filtering (safer to do in Python if list is small, but SQL is faster)
-        # For domains, using NOT LIKE might be heavy if many domains. 
-        # But for MVP, we iterate conditions or just Python filter. 
-        # Let's simple SQL filter for strict matches if domain extraction is easy?
-        # Actually, "value" in ignore list is "gmail.com"
-        # We want to exclude email ending with "@gmail.com"
-        
+            
         for domain in ignored_domains:
             query = query.filter(Contact.email.notilike(f"%@{domain}"))
 
-        results = query.order_by(desc(stats_query.c.max_score))\
-            .limit(limit).offset(offset).all()
-
+        # Sort by pre-calculated score
+        query = query.order_by(desc(Contact.closeness_score))
+        
+        # Pagination
+        contacts = query.limit(limit).offset(offset).all()
 
         contacts_data = []
         
-        for row in results:
-            # row is (Contact, contact_id, max_score, thread_count, last_active, first_active)
-            # Because we queried (Contact, stats_query)
-            contact = row[0]
-            # row[1] is contact_id
-            max_score = row.max_score
-            thread_count = row.thread_count
-            last_active = row.last_active
-            first_active = row.first_active_real
-
-
-            # Fetch individual threads for this contact (for accordion view)
+        for contact in contacts:
+            # Fetch threads for this contact (limit to recent 5 for performance)
             threads = db.query(Thread)\
                 .filter(Thread.contact_id == contact.id)\
+                .filter(Thread.status == 'active')\
                 .order_by(Thread.last_message_at.desc())\
+                .limit(5)\
                 .all()
                 
             thread_list = [{
@@ -266,23 +231,31 @@ def get_contacts(
                 "message_count": t.message_count
             } for t in threads]
 
-            # Determine "Representative Thread Title" (Top score one)
-            top_thread = max(threads, key=lambda x: x.score or 0.0) if threads else None
+            top_thread = threads[0] if threads else None
             top_title = decode_mime(top_thread.subject) if top_thread and top_thread.subject else "No Thread"
+            
+            # Count total threads (cheap count)
+            thread_count = db.query(Thread).filter(Thread.contact_id == contact.id, Thread.status == 'active').count()
 
             contacts_data.append({
                 "id": contact.id,
                 "name": decode_mime(contact.name or "Unknown"),
                 "email": contact.email,
-                "max_score": float(max_score or 0.0),
+                "max_score": float(contact.closeness_score or 0.0),
                 "thread_count": thread_count,
-                "last_active": last_active.strftime("%Y-%m-%d") if last_active else None,
-                "first_active": first_active.strftime("%Y-%m-%d") if first_active else None,
+                "last_active": contact.last_contacted_at.strftime("%Y-%m-%d") if contact.last_contacted_at else None,
+                "first_active": None, # Expensive to calculate on fly, skip for now
                 "top_thread_title": top_title,
                 "threads": thread_list
             })
 
         return contacts_data
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"Error in get_contacts: {e}")
+        return []
     except Exception as e:
         import traceback
         traceback.print_exc()
