@@ -220,11 +220,15 @@ def run_feature_extraction():
 
     print("   - Aggregating Contact Scores...")
     with engine.connect() as conn:
+        # 1. Reset all scores to 0 first (Critical! Otherwise contacts with all-ignored threads retain old scores)
+        conn.execute(text("UPDATE contacts SET closeness_score = 0"))
+        
+        # 2. Update with new sums
         # SQLite compatible UPDATE with correlated subquery
         stmt_agg = text("""
             UPDATE contacts
             SET closeness_score = (
-                SELECT SUM(score) FROM threads WHERE contacts.id = threads.contact_id AND status = 'active'
+                SELECT IFNULL(SUM(score), 0) FROM threads WHERE contacts.id = threads.contact_id AND status = 'active'
             ),
             last_contacted_at = (
                 SELECT MAX(last_message_at) FROM threads WHERE contacts.id = threads.contact_id AND status = 'active'
