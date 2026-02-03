@@ -41,12 +41,15 @@ def decode_mime_header(header_val):
     if not header_val: return ""
     try:
         decoded = decode_header(header_val)
-        return str(make_header(decoded))
+        val = str(make_header(decoded))
     except:
-        return header_val
+        val = str(header_val)
+    return val.replace('\x00', '')
 
 def clean_quote(text_body):
     if not text_body: return ""
+    # Remove NUL just in case
+    text_body = text_body.replace('\x00', '')
     lines = text_body.split('\n')
     cleaned_lines = []
     quote_headers = [
