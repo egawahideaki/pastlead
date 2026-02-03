@@ -70,8 +70,9 @@ def main():
         sys.exit(1)
 
     # 4. Generate Embeddings (Vector search prep)
-    if not run_step("generate_embeddings.py"):
-        sys.exit(1)
+    # Skipped for SQLite migration (no pgvector support)
+    # if not run_step("generate_embeddings.py"):
+    #     sys.exit(1)
 
     print("\n🎉 All steps completed successfully!")
     print("You can now start the server: uvicorn app.main:app --reload")
