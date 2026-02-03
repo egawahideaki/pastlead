@@ -43,7 +43,7 @@ def run_filtering():
                 UPDATE threads 
                 SET status = 'ignored' 
                 WHERE contact_id IN (
-                    SELECT id FROM contacts WHERE email LIKE '%{word}%'
+                    SELECT id FROM contacts WHERE LOWER(email) LIKE '%{word}%'
                 ) AND status = 'active';
             """)
             res = conn.execute(stmt_blk)
