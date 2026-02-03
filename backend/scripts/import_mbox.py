@@ -220,7 +220,8 @@ def flush_buffer(session, contacts_dict, messages_list):
     session.commit()
 
 def process_mbox_streaming(file_path, session):
-    print(f"🚀 Streaming High-Speed Parse: {file_path}")
+    file_size = os.path.getsize(file_path)
+    print(f"🚀 Streaming High-Speed Parse: {file_path} (Size: {file_size / (1024*1024):.1f} MB)")
     
     # Load Existing IDs (Resume Support)
     existing_mids = set()
@@ -256,7 +257,11 @@ def process_mbox_streaming(file_path, session):
                         flush_buffer(session, buffer_contacts, buffer_messages)
                         buffer_contacts = {}
                         buffer_messages = []
-                        print(f"   ... processed {count} (skipped {skipped})", end='\r')
+                        
+                        # Progress status
+                        current_pos = f.tell()
+                        progress_pct = (current_pos / file_size) * 100
+                        print(f"   ... {progress_pct:.1f}% done | {count} msgs (skipped {skipped})", end='\r')
                         
                 # Start new message
                 current_lines = [line]
